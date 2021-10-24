@@ -1,41 +1,40 @@
-//battery
-//PION
-//ESP32
-//StepDown
-
-//BNO055 - OK
-//BMP280 - OK
-//NRF24L01 - OK
-//SD Module - 
-//SERVO - OK
-
+// ---------------------------------------------------------------------------------------------------------Incluindo bibliotecas------------------------------------------------------------------------------------------------
+//Bibliotecas do Cartão SD
+// #include <SPI.h>
+// #include <SD.h>
 
 //Bibliotecas padrão C 
 #include <stdio.h> //
 #include <stdlib.h> //
 #include <string.h> //Manipulação de strings
 
-//Biblioteca NRF24L01
+// Biblioteca NRF24L01
 #include "mirf.h"
 
-//Biblioteca de gerenciamento de tarefas - freeRTOS
-#include "freertos/FreeRTOS.h";
-#include "freertos/task.h";
+// Biblioteca de gerenciamento de tarefas - freeRTOS
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
-//Biblioteca para logs (prints de informação no console)
+// Biblioteca para logs (prints de informação no console)
 #include "esp_log.h"
 
-//Biblioteca do BNO055
-#include "BNO055ESP32.h";
+// Biblioteca do BNO055
+#include "BNO055ESP32.h"
 
-//Biblioteca Servo
+// Biblioteca Servo
 #include "servoControl.h"
 
-//Bibliotecas BMP280
+// Bibliotecas BMP280
 #include <Wire.h>
 #include <SPI.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BMP280.h>
+
+
+//* ------------------------------------------------------------------------------------------------------Definindo algumas variáveis------------------------------------------------------------------------------------------
+//Criando um arquivo para salvar os dados
+File myFile;
+
 //Definindo Pinos BMP
 #define BMP_SCK 13
 #define BMP_MISO 12
@@ -47,9 +46,11 @@ typedef union {
   uint8_t value[4];
   unsigned long now_time;
 } MYDATA_t;
+
 //Criando uma variável do tipo MYDATA_t
 MYDATA_t mydata;
 
+//*----------------------------------------------------------------------------------------------Código rádio -----------------------------------------------------------------------------------------------------------------
 //Configuração Receiver
 if(CONFIG_RECEIVER){
 void receiver(void *pvParameters)
@@ -110,15 +111,14 @@ void transmitter(void *pvParameters)
 	}
 }
 }
-	
-#define tag "MIRF"
 
+//Executando tarefas do rádio
+#define tag "MIRF"
 void app_main(void)
 {
     if (CONFIG_RECEIVER){
         xTaskCreate(receiver, "RECV", 1024*2, NULL, 2, NULL);
     }
-        // Create Task
 
     if (CONFIG_TRANSMITTER){
         xTaskCreate(transmitter, "TRANS", 1024*2, NULL, 2, NULL);
@@ -126,9 +126,29 @@ void app_main(void)
     }
 }
 
-
+//*-------------------------------------------------------------------------------------------Criação de rotina ---------------------------------------------------------------------------------------------------------
 extern "C" void app_main(){
     
+    //* -----SD CARD --------
+    //inicializando SD Card
+    ESP_LOGI(TAG, "Initializing SD card...");
+    if (!SD.begin(10)) {
+    ESP_LOGI(TAG, "initialization failed!");
+    while (1);
+    }
+    ESP_LOGI("initialization done.");
+
+    //Abrindo o arquivo para salvar infos
+    myFile = SD.open("test.txt", FILE_WRITE);
+
+    // Se o arquivo for inicializado, faz-se o seguinte teste
+    if (myFile) {
+    ESP_LOGI(TAG, "Writing to test.txt...");
+    myFile.println("testing 1, 2, 3.");
+    } 
+
+
+    //* ----- SERVO -----
     //Variável de estado do servo (abertura do paraquedas)
     myServo.write(i);
 	TaskDelay(10 / portTICK_RATE_MS);
@@ -139,6 +159,8 @@ extern "C" void app_main(){
     myServo.write(0);
 	vTaskDelay(1000 / portTICK_RATE_MS);
 
+
+    //* ----- BNO055 --------
     // Calibrando o BBNO:
     // bno055_offsets_t storedOffsets;
     // storedOffsets.accelOffsetX = 29;
@@ -195,26 +217,29 @@ extern "C" void app_main(){
         return;
     }
 
+
+//*------------------------------------------------------------------------------------------------Tarefas em loop ----------------------------------------------------------------------------------------------------
     // Equivalente ao void loop (uma rotina ativa durante toda a execução)
     while (1) {
 
+
+        //* ----- Coletando dados BMP----------
         // Mostrando informações do BMP
         temp = bme.readTemperature();
         press = bme.readPressure();
         alt = bme.readAltitude(1013.25);
-        ESP_LOGI(TAG, "TEMP: %.2f ºC", temp);
-        ESP_LOGI(TAG, "PRESS: %.2f Pa", press);
-        ESP_LOGI(TAG, "HEIGHT: %.2f m", alt);
+        // ESP_LOGI(TAG, "TEMP: %.2f ºC", temp);
+        // ESP_LOGI(TAG, "PRESS: %.2f Pa", press);
+        // ESP_LOGI(TAG, "HEIGHT: %.2f m", alt);
 
-
+        //Checagem Paraquedas //!Definir função abrir_paraquedas();
         estado = abrir_paraquedas();
-
         if(estado == true){
         	myServo.write(90);
 			vTaskDelay(10 / portTICK_RATE_MS);
         }
 
-        //Checando dados de calibragem do BNO
+        //Aquisição de dados e validação da calibragem do BNO
         try {
             // Calibration 3 = fully calibrated, 0 = not calibrated
             bno055_calibration_t cal = bno.getCalibration();
@@ -227,8 +252,17 @@ extern "C" void app_main(){
         } catch (std::exception& ex) {
             ESP_LOGE(TAG, "Something bad happened: %s", ex.what());
         }
-        vTaskDelay(100 / portTICK_PERIOD_MS);  // in fusion mode max output rate is 100hz (actual rate: 100ms (10hz))
-    }
 
+        myFile.println(informações);//Salvando informações no cartão
+
+        vTaskDelay(100 / portTICK_PERIOD_MS);  // in fusion mode max output rate is 100hz (actual rate: 100ms (10hz))
+
+        ESP_LOGI(TAG, "TODAS AS INFORMAÇõES JUNTAS");
+
+        if(fim_do_voo){
+            myFile.close();  // fecha o arquivo e salva as informações
+            break;
+        }
+    }
 }
 
