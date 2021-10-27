@@ -53,6 +53,8 @@ MYDATA_t mydata;
 
 TaskHandle_t xHandle;
 
+bool soft_reset = false;
+
 //*----------------------------------------------------------------------------------------------Código rádio -----------------------------------------------------------------------------------------------------------------
 //Configuração Receiver
 if(CONFIG_RECEIVER){
@@ -215,8 +217,12 @@ extern "C" void app_main(){
         ESP_LOGI(TAG, "Configuração concluída");
     } catch(BNO055BaseException& ex) {
         ESP_LOGE(TAG, "Falha na configuração, Erro: %s", ex.what());
+        failures++;
+        soft_reset = true;
         return;
     } catch(std::exception& ex){
+        failures++;
+        soft_reset = true;
         ESP_LOGE(TAG, "Falha na configuração, Erro %s", ex.what());
         return; //Ver possibilidade de juntar em um catch só
     }
@@ -234,9 +240,13 @@ extern "C" void app_main(){
         ESP_LOGI(TAG, "Self-Test Results: MCU: %u, GYR:%u, MAG:%u, ACC: %u", res.mcuState, res.gyrState, res.magState,
                  res.accState);
     } catch (BNO055BaseException& ex) {  // see BNO055ESP32.h for more details about exceptions
+        failures++;
+        soft_reset = true;
         ESP_LOGE(TAG, "Something bad happened: %s", ex.what());
         return;
     } catch (std::exception& ex) {
+        failures++;
+        soft_reset = true;
         ESP_LOGE(TAG, "Something bad happened: %s", ex.what());
         return;
     }
@@ -260,9 +270,13 @@ extern "C" void app_main(){
                 ESP_LOGI(TAG, "Euler: X: %.1f Y: %.1f Z: %.1f || Calibration SYS: %u GYRO: %u ACC:%u MAG:%u", v.x, v.y, v.z, cal.sys,
                          cal.gyro, cal.accel, cal.mag);
             } catch (BNO055BaseException& ex) {
+                failures++;
+                soft_reset = true;
                 ESP_LOGE(TAG, "Something bad happened: %s", ex.what());
                 return;
             } catch (std::exception& ex) {
+                failures++;
+                soft_reset = true;
                 ESP_LOGE(TAG, "Something bad happened: %s", ex.what());
             }
 
@@ -292,8 +306,11 @@ extern "C" void app_main(){
 
     xTaskCreate(general_execution, "EXC", 1024*2, NULL, 1, xHandle);
 
-    if(soft_reset()){
+    if(soft_reset){
         vTaskSuspend( NULL );
+        if(failures >= 10){
+            esp_restart();
+        }
     }
 }
 
