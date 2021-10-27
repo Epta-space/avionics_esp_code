@@ -7,6 +7,7 @@
 #include <stdio.h> //
 #include <stdlib.h> //
 #include <string.h> //Manipulação de strings
+#include <time.h>
 
 // Biblioteca NRF24L01
 #include "mirf.h"
@@ -126,9 +127,26 @@ void app_main(void)
     }
 }
 
+void waitFor(unsigned int secs) {
+    unsigned int retTime = time(0) + secs;   
+    while (time(0) < retTime);             
+}
+
 //*-------------------------------------------------------------------------------------------Criação de rotina ---------------------------------------------------------------------------------------------------------
 extern "C" void app_main(){
     
+    bool start_flag, sensor_flag;
+
+    ESP_LOGI(TAG, "Etapa de boot iniciada");
+    start_execution = clock();
+    while(start_flag == false){
+        if((long int)(clock() - start_execution) > 60000 || telemetry_command()){
+            start_flag = true;
+        }
+    }
+    ESP_LOGI(TAG, "Etapa de boot concluída");
+    ESP_LOGI(TAG, "Etapa de testes individuais dos componentes iniciada");
+    //Iniciando testes dos sensores e equipamentos
     //* -----SD CARD --------
     //inicializando SD Card
     ESP_LOGI(TAG, "Initializing SD card...");
@@ -145,7 +163,7 @@ extern "C" void app_main(){
     if (myFile) {
     ESP_LOGI(TAG, "Writing to test.txt...");
     myFile.println("testing 1, 2, 3.");
-    } 
+    }
 
 
     //* ----- SERVO -----
@@ -196,7 +214,6 @@ extern "C" void app_main(){
         return; //Ver possibilidade de juntar em um catch só
     }
 
-
     //Registrando dados do BNO
      try {
         int8_t temperature = bno.getTemp();
@@ -217,52 +234,56 @@ extern "C" void app_main(){
         return;
     }
 
+    ESP_LOGI(TAG, "Etapa de testes individuais dos componentes concluídos");
 
 //*------------------------------------------------------------------------------------------------Tarefas em loop ----------------------------------------------------------------------------------------------------
     // Equivalente ao void loop (uma rotina ativa durante toda a execução)
-    while (1) {
+    void general_execution(void * parameters){
+        for(;;){
+            //Coletando dados do BMP
+            temp = bme.readTemperature();
+            press = bme.readPressure();
+            alt = bme.readAltitude(1013.25);
 
+            //adquirindo dados do BNO e validando seus dados
+            try {
+                // Calibration 3 = fully calibrated, 0 = not calibrated
+                bno055_calibration_t cal = bno.getCalibration();
+                bno055_vector_t v = bno.getVectorEuler();
+                ESP_LOGI(TAG, "Euler: X: %.1f Y: %.1f Z: %.1f || Calibration SYS: %u GYRO: %u ACC:%u MAG:%u", v.x, v.y, v.z, cal.sys,
+                         cal.gyro, cal.accel, cal.mag);
+            } catch (BNO055BaseException& ex) {
+                ESP_LOGE(TAG, "Something bad happened: %s", ex.what());
+                return;
+            } catch (std::exception& ex) {
+                ESP_LOGE(TAG, "Something bad happened: %s", ex.what());
+            }
 
-        //* ----- Coletando dados BMP----------
-        // Mostrando informações do BMP
-        temp = bme.readTemperature();
-        press = bme.readPressure();
-        alt = bme.readAltitude(1013.25);
-        // ESP_LOGI(TAG, "TEMP: %.2f ºC", temp);
-        // ESP_LOGI(TAG, "PRESS: %.2f Pa", press);
-        // ESP_LOGI(TAG, "HEIGHT: %.2f m", alt);
+            estado = abrir_paraquedas();
+            if(estado == true){
+                try{
+                    myServo.write(90);
+			        vTaskDelay(10 / portTICK_RATE_MS);
+                } catch {
+                    ESP_LOGE(TAG, "Recovery not worked, Retrying...");
+                    retry_activate_recovery();
+                }
+        	    
+            }
 
-        //Checagem Paraquedas //!Definir função abrir_paraquedas();
-        estado = abrir_paraquedas();
-        if(estado == true){
-        	myServo.write(90);
-			vTaskDelay(10 / portTICK_RATE_MS);
-        }
+            myFile.println(informações);//Salvando informações no cartão
 
-        //Aquisição de dados e validação da calibragem do BNO
-        try {
-            // Calibration 3 = fully calibrated, 0 = not calibrated
-            bno055_calibration_t cal = bno.getCalibration();
-            bno055_vector_t v = bno.getVectorEuler();
-            ESP_LOGI(TAG, "Euler: X: %.1f Y: %.1f Z: %.1f || Calibration SYS: %u GYRO: %u ACC:%u MAG:%u", v.x, v.y, v.z, cal.sys,
-                     cal.gyro, cal.accel, cal.mag);
-        } catch (BNO055BaseException& ex) {
-            ESP_LOGE(TAG, "Something bad happened: %s", ex.what());
-            return;
-        } catch (std::exception& ex) {
-            ESP_LOGE(TAG, "Something bad happened: %s", ex.what());
-        }
+            vTaskDelay(100 / portTICK_PERIOD_MS);  // in fusion mode max output rate is 100hz (actual rate: 100ms (10hz))
 
-        myFile.println(informações);//Salvando informações no cartão
+            ESP_LOGI(TAG, "TODAS AS INFORMAÇõES JUNTAS");
 
-        vTaskDelay(100 / portTICK_PERIOD_MS);  // in fusion mode max output rate is 100hz (actual rate: 100ms (10hz))
-
-        ESP_LOGI(TAG, "TODAS AS INFORMAÇõES JUNTAS");
-
-        if(fim_do_voo){
-            myFile.close();  // fecha o arquivo e salva as informações
-            break;
+            if(fim_do_voo){
+                myFile.close();  // fecha o arquivo e salva as informações
+                break;
+            }
         }
     }
+
+    xTaskCreate(general_execution, "EXC", 1024*2, NULL, 1, NULL);
 }
 
