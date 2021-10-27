@@ -51,6 +51,8 @@ typedef union {
 //Criando uma variável do tipo MYDATA_t
 MYDATA_t mydata;
 
+TaskHandle_t xHandle;
+
 //*----------------------------------------------------------------------------------------------Código rádio -----------------------------------------------------------------------------------------------------------------
 //Configuração Receiver
 if(CONFIG_RECEIVER){
@@ -130,6 +132,11 @@ void app_main(void)
 void waitFor(unsigned int secs) {
     unsigned int retTime = time(0) + secs;   
     while (time(0) < retTime);             
+}
+
+void dispara_paraquedas() {
+    myServo.write(90);
+	vTaskDelay(10 / portTICK_RATE_MS);
 }
 
 //*-------------------------------------------------------------------------------------------Criação de rotina ---------------------------------------------------------------------------------------------------------
@@ -262,11 +269,10 @@ extern "C" void app_main(){
             estado = abrir_paraquedas();
             if(estado == true){
                 try{
-                    myServo.write(90);
-			        vTaskDelay(10 / portTICK_RATE_MS);
+                    dispara_paraquedas();
                 } catch {
                     ESP_LOGE(TAG, "Recovery not worked, Retrying...");
-                    retry_activate_recovery();
+                    dispara_paraquedas();
                 }
         	    
             }
@@ -284,6 +290,10 @@ extern "C" void app_main(){
         }
     }
 
-    xTaskCreate(general_execution, "EXC", 1024*2, NULL, 1, NULL);
+    xTaskCreate(general_execution, "EXC", 1024*2, NULL, 1, xHandle);
+
+    if(soft_reset()){
+        vTaskSuspend( NULL );
+    }
 }
 
