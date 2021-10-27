@@ -255,6 +255,17 @@ extern "C" void app_main(){
 
 //*------------------------------------------------------------------------------------------------Tarefas em loop ----------------------------------------------------------------------------------------------------
     // Equivalente ao void loop (uma rotina ativa durante toda a execução)
+
+     void reset_listener(void * parameters){
+        for(;;){
+            if(soft_reset()){
+            vTaskSuspend(xHandle);
+            xTaskCreate(general_execution, "EXC", 1024*2, NULL, 1, NULL);
+            }
+        }
+    }
+    
+
     void general_execution(void * parameters){
         for(;;){
             //Coletando dados do BMP
