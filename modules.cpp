@@ -258,9 +258,12 @@ extern "C" void app_main(){
 
      void reset_listener(void * parameters){
         for(;;){
-            if(soft_reset()){
-            vTaskSuspend(xHandle);
-            xTaskCreate(general_execution, "EXC", 1024*2, NULL, 1, NULL);
+            if(soft_reset){
+                vTaskSuspend(xHandle);
+                xTaskCreate(general_execution, "EXC", 1024*2, NULL, 1, NULL);
+                if(failures >= 10){
+                esp_restart();
+                }
             }
         }
     }
@@ -316,12 +319,6 @@ extern "C" void app_main(){
     }
 
     xTaskCreate(general_execution, "EXC", 1024*2, NULL, 1, xHandle);
-
-    if(soft_reset){
-        vTaskSuspend( NULL );
-        if(failures >= 10){
-            esp_restart();
-        }
-    }
+    xTaskCreate(reset_listener, "RES", 1024*2, NULL, 1, NULL);
+    
 }
-
